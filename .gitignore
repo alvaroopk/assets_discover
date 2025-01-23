@@ -1,0 +1,27 @@
+# Entorno virtual
+asset_env/
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos de distribución
+dist/
+build/
+*.egg-info/
+
+# IDEs y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Datos sintéticos
+.pytest_cache/
+.venv/
+*.pyc 
