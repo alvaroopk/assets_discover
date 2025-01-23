@@ -1,23 +1,29 @@
 import pandas as pd
 import numpy as np
-from scipy.optimize import minimize
+from pulp import *
 import os
 import logging
+import yaml
 from datetime import datetime
 import time
 
-# Configurar logging
+def cargar_configuracion(config_path='config.yaml'):
+    """Carga la configuración desde el archivo YAML"""
+    with open(config_path, 'r') as file:
+        return yaml.safe_load(file)
+
 def setup_logger():
     """Configura el logger para el proceso de optimización"""
-    # Crear directorio para logs si no existe
-    os.makedirs('datos_optimizacion/logs', exist_ok=True)
+    # Crear directorio para logs
+    os.makedirs('datos_optimizacion', exist_ok=True)
     
-    # Configurar el logger
-    log_filename = f'datos_optimizacion/logs/optimizacion_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+    # Crear nombre de archivo de log con timestamp
+    log_filename = f'datos_optimizacion/optimizacion_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
     
+    # Configurar el logger para escribir tanto en archivo como en consola
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
+        level=logging.DEBUG,  # Cambiado a DEBUG para ver todos los detalles
+        format='%(message)s',  # Simplificado para mejor lectura de ecuaciones
         handlers=[
             logging.FileHandler(log_filename),
             logging.StreamHandler()
@@ -25,182 +31,140 @@ def setup_logger():
     )
     return logging.getLogger(__name__)
 
-def calcular_evolucion_pesos(pesos_iniciales, df_rendimientos):
-    """
-    Calcula la evolución de los pesos y rendimientos del fondo.
-    """
-    n_periodos = len(df_rendimientos.columns)
-    pesos = pd.DataFrame(index=df_rendimientos.index, columns=df_rendimientos.columns)
-    rendimientos_fondo = pd.Series(index=df_rendimientos.columns)
-    
-    # Inicializar primer período
-    pesos['t_0'] = pesos_iniciales
-    rendimientos_fondo['t_0'] = (pesos_iniciales * df_rendimientos['t_0']).sum()
-    
-    # Calcular pesos y rendimientos para períodos siguientes
-    for t in range(1, n_periodos):
-        col_actual = f't_{t}'
-        col_anterior = f't_{t-1}'
-        
-        # Actualizar valores según rendimientos
-        valores_actualizados = pesos[col_anterior] * (1 + df_rendimientos[col_anterior])
-        # Normalizar para que sumen 1
-        pesos[col_actual] = valores_actualizados / valores_actualizados.sum()
-        # Calcular rendimiento del período
-        rendimientos_fondo[col_actual] = (pesos[col_actual] * df_rendimientos[col_actual]).sum()
-    
-    return pesos, rendimientos_fondo
-
-def funcion_objetivo(pesos_iniciales, df_rendimientos, df_fondo):
-    """
-    Calcula el error cuadrático medio entre los rendimientos del fondo y el objetivo.
-    """
-    # Convertir array a Series con índices correctos
-    pesos_series = pd.Series(pesos_iniciales, index=df_rendimientos.index)
-    
-    # Calcular evolución de pesos y rendimientos
-    _, rendimientos_calculados = calcular_evolucion_pesos(pesos_series, df_rendimientos)
-    
-    # Calcular error cuadrático medio
-    rendimientos_objetivo = df_fondo.iloc[0]
-    error = ((rendimientos_calculados - rendimientos_objetivo)**2).mean()
-    
-    return error
-
-def restriccion_suma_uno(pesos):
-    """La suma de los pesos debe ser 1"""
-    return np.sum(pesos) - 1
-
-def restriccion_num_activos(pesos, M):
-    """No más de M activos con peso significativo"""
-    return M - np.sum(pesos > 1e-4)
-
 def optimizar_composicion(M, P, 
-                         rendimientos_path='data_sintetica/activos_rendimientos.csv',
-                         fondo_path='data_sintetica/fondo_evolucion.csv'):
+                         rendimientos_cum_path='data_sintetica/activos_rendimientos_cum.csv',
+                         performance_path='data_sintetica/performance_peso.csv'):
     """
-    Optimiza la composición inicial del fondo usando optimización no lineal.
+    Optimiza la composición del fondo usando programación lineal.
     """
     logger = setup_logger()
     tiempo_inicio = time.time()
     
     logger.info(f"Iniciando optimización con M={M} y P={P}")
     
-    # Crear directorio para resultados
-    os.makedirs('datos_optimizacion', exist_ok=True)
-    
     # Cargar datos
     logger.info("Cargando datos de entrada...")
-    df_rendimientos = pd.read_csv(rendimientos_path, index_col=0)
-    df_fondo = pd.read_csv(fondo_path, index_col=0)
+    df_rendimientos_cum = pd.read_csv(rendimientos_cum_path, index_col=0)
+    df_performance = pd.read_csv(performance_path, index_col=0)
     
-    n_activos = len(df_rendimientos)
-    logger.info(f"Datos cargados: {n_activos} activos y {len(df_rendimientos.columns)} períodos")
+    # Obtener valor objetivo del fondo en cada período
+    valores_objetivo = df_performance.loc['F'].iloc[1:]  # Excluimos t_0
     
-    mejor_resultado = None
-    mejor_error = float('inf')
+    logger.info("\nValores objetivo del fondo por período:")
+    for t, valor in valores_objetivo.items():
+        logger.info(f"{t}: {valor:.6f}")
     
-    # Realizar múltiples intentos con diferentes puntos iniciales
-    for intento in range(10):
-        logger.info(f"\nIniciando intento {intento + 1}/10")
+    # Crear el problema de optimización
+    prob = LpProblem("Optimizacion_Fondo", LpMinimize)
+    
+    # Variables de decisión
+    activos = df_rendimientos_cum.index
+    x = LpVariable.dicts("peso", activos, 0, P)  # Pesos de los activos
+    y = LpVariable.dicts("seleccion", activos, 0, 1, LpBinary)  # Variables binarias para selección
+    error = LpVariable.dicts("error", df_rendimientos_cum.columns, 0)  # Error por período
+    
+    logger.info(f"\nNúmero de activos disponibles: {len(activos)}")
+    logger.info(f"Restricciones principales:")
+    logger.info(f"- Máximo {M} activos")
+    logger.info(f"- Peso máximo por activo: {P}")
+    logger.info(f"- Suma de pesos debe ser 1")
+    
+    # Función objetivo: minimizar la suma de errores
+    prob += lpSum(error[t] for t in df_rendimientos_cum.columns)
+    
+    # Restricciones
+    logger.info("\nGenerando restricciones...")
+    
+    # 1. La suma de los pesos debe ser 1
+    prob += lpSum(x[i] for i in activos) == 1
+    logger.info("1. Suma de pesos = 1:")
+    logger.info(f"   Σ w_i = 1")
+    
+    # 2. Número máximo de activos
+    prob += lpSum(y[i] for i in activos) <= M
+    logger.info(f"\n2. Máximo {M} activos:")
+    logger.info(f"   Σ y_i ≤ {M}")
+    
+    # 3. Vincular variables binarias con pesos
+    logger.info(f"\n3. Vinculación de pesos con variables binarias:")
+    for i in activos:
+        prob += x[i] <= y[i] * P
+        logger.info(f"   {i}: w_{i} ≤ {P} * y_{i}")
+    
+    # 4. Para cada período, el valor del fondo debe coincidir con la suma ponderada
+    logger.info("\n4. Restricciones de valor del fondo por período:")
+    for t in df_rendimientos_cum.columns:
+        valor_objetivo = valores_objetivo[t]
+        logger.info(f"\nPeríodo {t}:")
+        logger.info(f"Valor objetivo: {valor_objetivo:.6f}")
         
-        # Generar pesos iniciales aleatorios que sumen 1
-        x0 = np.random.random(n_activos)
-        x0 = x0 / x0.sum()
+        # Construir y mostrar la restricción completa
+        terminos = []
+        for i in activos:
+            coef = 1 + df_rendimientos_cum.loc[i, t]
+            terminos.append(f"({coef:.6f} * w_{i})")
         
-        # Definir límites y restricciones
-        bounds = [(0, P) for _ in range(n_activos)]
-        restricciones = [
-            {'type': 'eq', 'fun': restriccion_suma_uno},
-            {'type': 'ineq', 'fun': restriccion_num_activos, 'args': (M,)}
-        ]
+        ecuacion = " + ".join(terminos)
+        logger.info(f"Restricción completa:")
+        logger.info(f"{ecuacion} - {valor_objetivo:.6f} ≤ error_{t}")
+        logger.info(f"{valor_objetivo:.6f} - ({ecuacion}) ≤ error_{t}")
         
-        # Optimizar
-        resultado = minimize(
-            funcion_objetivo,
-            x0,
-            args=(df_rendimientos, df_fondo),
-            method='SLSQP',
-            bounds=bounds,
-            constraints=restricciones,
-            options={'maxiter': 1000}
-        )
-        
-        if resultado.success:
-            logger.info(f"Intento {intento + 1} exitoso. Error: {resultado.fun:.6f}")
-            if resultado.fun < mejor_error:
-                mejor_error = resultado.fun
-                mejor_resultado = resultado
-                logger.info("¡Nuevo mejor resultado encontrado!")
-        else:
-            logger.warning(f"Intento {intento + 1} falló: {resultado.message}")
+        # Añadir las restricciones al modelo
+        suma_ponderada = lpSum(x[i] * (1 + df_rendimientos_cum.loc[i, t]) for i in activos)
+        prob += suma_ponderada - valor_objetivo <= error[t]
+        prob += valor_objetivo - suma_ponderada <= error[t]
     
-    if mejor_resultado is None:
-        logger.error("No se encontró una solución factible en ningún intento")
-        raise ValueError("No se encontró una solución factible en ningún intento")
+    # Resolver el problema
+    logger.info("\nResolviendo el problema de optimización...")
+    status = prob.solve()
     
-    # Obtener y procesar pesos optimizados
-    logger.info("\nProcesando mejor solución encontrada...")
-    pesos_optimos = pd.Series(mejor_resultado.x, index=df_rendimientos.index)
+    if status != 1:
+        logger.error("No se encontró una solución óptima")
+        raise ValueError("No se encontró una solución óptima")
     
-    # Filtrar pesos muy pequeños y renormalizar
-    pesos_optimos[pesos_optimos < 1e-4] = 0
-    pesos_optimos = pesos_optimos / pesos_optimos.sum()
+    # Extraer resultados
+    logger.info("Procesando resultados...")
+    pesos_optimos = {i: value(x[i]) for i in activos if value(x[i]) > 1e-6}
     
-    # Verificar restricciones
-    n_activos_seleccionados = (pesos_optimos > 1e-4).sum()
-    logger.info(f"Número de activos seleccionados: {n_activos_seleccionados}")
-    
-    if n_activos_seleccionados > M:
-        logger.error(f"La solución excede el número máximo de activos: {n_activos_seleccionados} > {M}")
-        raise ValueError(f"La solución tiene {n_activos_seleccionados} activos, más que el máximo permitido {M}")
-    
-    if any(peso > P for peso in pesos_optimos):
-        logger.error(f"Algunos pesos exceden el máximo permitido {P}")
-        raise ValueError(f"Algunos pesos exceden el máximo permitido {P}")
-    
-    # Calcular evolución de pesos y rendimientos
-    pesos_evolucion, rendimientos_calculados = calcular_evolucion_pesos(
-        pesos_optimos, df_rendimientos
-    )
+    # Crear DataFrame con la solución
+    df_solucion = pd.DataFrame(pesos_optimos.items(), columns=['Activo', 'A_0'])
+    df_solucion.set_index('Activo', inplace=True)
     
     # Calcular error final
-    rendimientos_objetivo = df_fondo.iloc[0]
-    rmse = np.sqrt(((rendimientos_calculados - rendimientos_objetivo)**2).mean())
-    
-    # Crear DataFrame con pesos iniciales
-    df_solucion = pd.DataFrame(pesos_optimos[pesos_optimos > 0], columns=['A'])
+    error_total = sum(value(error[t]) for t in df_rendimientos_cum.columns)
+    rmse = np.sqrt(error_total / len(df_rendimientos_cum.columns))
     
     # Guardar resultados
-    logger.info("\nGuardando resultados...")
+    logger.info("Guardando resultados...")
     df_solucion.to_csv('datos_optimizacion/fondo_optimizado.csv')
-    pesos_evolucion.to_csv('datos_optimizacion/pesos_optimizados_evolucion.csv')
-    pd.DataFrame(rendimientos_calculados).T.to_csv('datos_optimizacion/rendimientos_calculados.csv')
     
     tiempo_total = time.time() - tiempo_inicio
-    logger.info(f"\nOptimización completada en {tiempo_total:.2f} segundos")
+    logger.info(f"Optimización completada en {tiempo_total:.2f} segundos")
     logger.info(f"Error cuadrático medio final: {rmse:.6f}")
     
     return df_solucion, rmse
 
 if __name__ == "__main__":
-    # Ejemplo de uso
-    M = 4  # máximo 4 activos
-    P = 0.30  # peso máximo 30%
-    
     try:
+        # Cargar configuración
+        config = cargar_configuracion()
+        
+        # Obtener parámetros de la configuración
+        M = config['optimizador']['M']
+        P = config['optimizador']['P']
+        
+        # Ejecutar optimización
         solucion, error = optimizar_composicion(M, P)
+        
         print("\nComposición óptima del fondo:")
         print(solucion)
         print(f"\nError cuadrático medio: {error:.6f}")
         
-        # Verificar que la suma de pesos es 1
-        suma_pesos = solucion['A'].sum()
-        print(f"\nSuma de pesos: {suma_pesos:.6f}")
-        
-        # Verificar número de activos
+        # Verificar restricciones
+        suma_pesos = solucion['A_0'].sum()
         n_activos = len(solucion)
-        print(f"\nNúmero de activos: {n_activos}")
+        print(f"\nSuma de pesos: {suma_pesos:.6f}")
+        print(f"Número de activos: {n_activos}")
         
     except Exception as e:
         print(f"Error: {e}") 

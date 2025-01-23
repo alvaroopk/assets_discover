@@ -1,0 +1,126 @@
+Iniciando optimización con M=20 y P=0.2
+Cargando datos de entrada...
+
+Valores objetivo del fondo por período:
+t_1: 1.054768
+t_2: 1.088795
+t_3: 1.118902
+t_4: 1.110425
+t_5: 1.183385
+t_6: 1.190005
+t_7: 1.257691
+t_8: 1.285039
+t_9: 1.237404
+t_10: 1.255648
+t_11: 1.307812
+t_12: 1.323904
+t_13: 1.364247
+t_14: 1.361504
+t_15: 1.422522
+t_16: 1.475696
+t_17: 1.593598
+t_18: 1.633159
+t_19: 1.745206
+t_20: 1.760504
+
+Número de activos disponibles: 100
+Restricciones principales:
+- Máximo 20 activos
+- Peso máximo por activo: 0.2
+- Suma de pesos debe ser 1
+
+Generando restricciones...
+1. Suma de pesos = 1:
+
+2. Máximo 20 activos:
+
+3. Vinculación de pesos con variables binarias:
+
+4. Restricciones de valor del fondo por período:
+
+Período t_1:
+Valor objetivo: 1.054768
+Restricción completa:
+
+Período t_2:
+Valor objetivo: 1.088795
+Restricción completa:
+
+Período t_3:
+Valor objetivo: 1.118902
+Restricción completa:
+
+Período t_4:
+Valor objetivo: 1.110425
+Restricción completa:
+
+Período t_5:
+Valor objetivo: 1.183385
+Restricción completa:
+
+Período t_6:
+Valor objetivo: 1.190005
+Restricción completa:
+
+Período t_7:
+Valor objetivo: 1.257691
+Restricción completa:
+
+Período t_8:
+Valor objetivo: 1.285039
+Restricción completa:
+
+Período t_9:
+Valor objetivo: 1.237404
+Restricción completa:
+
+Período t_10:
+Valor objetivo: 1.255648
+Restricción completa:
+
+Período t_11:
+Valor objetivo: 1.307812
+Restricción completa:
+
+Período t_12:
+Valor objetivo: 1.323904
+Restricción completa:
+
+Período t_13:
+Valor objetivo: 1.364247
+Restricción completa:
+
+Período t_14:
+Valor objetivo: 1.361504
+Restricción completa:
+
+Período t_15:
+Valor objetivo: 1.422522
+Restricción completa:
+
+Período t_16:
+Valor objetivo: 1.475696
+Restricción completa:
+
+Período t_17:
+Valor objetivo: 1.593598
+Restricción completa:
+
+Período t_18:
+Valor objetivo: 1.633159
+Restricción completa:
+
+Período t_19:
+Valor objetivo: 1.745206
+Restricción completa:
+
+Período t_20:
+Valor objetivo: 1.760504
+Restricción completa:
+
+Resolviendo el problema de optimización...
+C:\Users\alvar\Documents\GitHub\assets_discover\asset_env\Lib\site-packages\pulp\solverdir\cbc\win\64\cbc.exe C:\Users\alvar\AppData\Local\Temp\41268df6a90747a58328a3372aa55254-pulp.mps timeMode elapsed branch printingOptions all solution C:\Users\alvar\AppData\Local\Temp\41268df6a90747a58328a3372aa55254-pulp.sol 
+Procesando resultados...
+Guardando resultados...
+Optimización completada en 15.75 segundos
+Error cuadrático medio final: 0.000301

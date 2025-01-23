@@ -1,15 +1,15 @@
 # Parámetros para generador_datos
 generador:
   n_activos: 100
-  t_periodos: 10
+  t_periodos: 20
   crecimiento: 0.03
-  m_fondo: 30  # número de activos para el fondo sintético
-  peso_maximo_fondo: 0.10  # peso máximo para el fondo sintético
+  m_fondo: 15  # número de activos para el fondo sintético
+  peso_maximo_fondo: 0.20  # peso máximo para el fondo sintético
 
 # Parámetros para optimizador_fondo
 optimizador:
-  M: 30  # número máximo de activos
-  P: 0.10  # peso máximo por activo
+  M: 15  # número máximo de activos
+  P: 0.20  # peso máximo por activo
   max_intentos: 10  # número de intentos de optimización
 
 # Rutas de archivos
